@@ -115,15 +115,33 @@ beforeAll(async () => {
   });
 }, 150_000);
 
-afterAll(async () => {
-  if (launcher && launcher.exitCode === null && launcher.signalCode === null) {
+/**
+ * Platform-aware launcher stop.
+ *
+ * POSIX: SIGINT → graceful shutdown of the launcher (exit 0), children die via
+ *   process groups.
+ * Windows CI: the launcher has no attached console, so a programmatic SIGINT is
+ *   not delivered (libuv cannot send CTRL_C_EVENT to a foreign process) — the
+ *   tree is killed with taskkill /T /F, exactly the same way launcher.killAll()
+ *   does it on Windows. The "graceful Ctrl+C with exit 0" scenario was verified
+ *   manually on a real Windows machine during acceptance.
+ */
+const stopLauncher = async () => {
+  if (!launcher || launcher.exitCode !== null || launcher.signalCode !== null) return;
+  if (process.platform === 'win32' && launcher.pid) {
+    spawn('taskkill', ['/pid', String(launcher.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
     launcher.kill('SIGINT');
   }
-  // Wait for the launcher to fully exit, then make sure no orphans remain.
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline && launcher.exitCode === null && launcher.signalCode === null) {
     await new Promise((r) => setTimeout(r, 250));
   }
+};
+
+afterAll(async () => {
+  await stopLauncher();
+  // Make sure no orphans remain.
   for (const port of [BASE_PORT, GATEWAY_PORT, DASHBOARD_PORT]) {
     if (await health(port)) {
       throw new Error(`orphan still alive on :${port}`);
@@ -203,13 +221,17 @@ describe('CLAIR PRO orchestration (e2e, --demo)', () => {
     expect(body.count).toBeGreaterThan(0);
   }, 30_000);
 
-  it('SIGINT gracefully stops the launcher and all children', async () => {
-    launcher.kill('SIGINT');
-    const deadline = Date.now() + 15_000;
-    while (Date.now() < deadline && launcher.exitCode === null && launcher.signalCode === null) {
-      await new Promise((r) => setTimeout(r, 250));
+  it('stop signal (SIGINT / tree-kill on Windows) stops the launcher without orphans', async () => {
+    await stopLauncher();
+    if (process.platform === 'win32') {
+      // In CI a graceful Ctrl+C is not programmatically achievable (no attached
+      // console): here we verify the core guarantee — the launcher has exited
+      // and no orphans remain (afterAll probes the ports). exit code 0 on
+      // SIGINT is verified on POSIX in this same run, and on Windows manually
+      // during acceptance (docs/WINDOWS_CHECKLIST.md).
+      expect(launcher.exitCode ?? launcher.signalCode).not.toBeNull();
+    } else {
+      expect(launcher.exitCode).toBe(0); // graceful shutdown exits cleanly
     }
-    expect(launcher.exitCode).toBe(0); // graceful shutdown exits cleanly
-    // afterAll additionally asserts no orphaned ports remain.
   }, 30_000);
 });
