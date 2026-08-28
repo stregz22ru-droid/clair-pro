@@ -1,0 +1,70 @@
+name: CI
+
+# CLAIR PRO — Unified Experience.
+#
+# Матрица [ubuntu-latest, windows-latest] — продукт декларирует
+# кроссплатформенность (bat + sh), поэтому проверяем её непрерывно,
+# а не только при ручной приёмке.
+#
+# E2E (orchestration.test.ts) поднимает полный стенд через
+# `node launcher.js --demo --no-browser` на изолированных портах
+# (13000/18080/14000/14100) — браузер не открывается, внешний LLM и
+# настоящий CLAIR Base не нужны (demo-режим с моками).
+#
+# Launcher резолвит gateway через CLAIR_GATEWAY_DIR (поддержка этого
+# env заложена специально для CI) — поэтому второй репозиторий
+# чекаутится рядом, deps ставятся в обоих.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · node 20
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      CLAIR_GATEWAY_DIR: ${{ github.workspace }}/clair-gateway
+    steps:
+      - name: Checkout clair-pro
+        uses: actions/checkout@v4
+
+      - name: Checkout clair-gateway (sibling, read-only dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: stregz22ru-droid/CLAIR-GATEWAY
+          path: clair-gateway
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            clair-gateway/package-lock.json
+
+      - name: Install clair-gateway deps (tsx for dev-run)
+        run: npm ci
+        working-directory: clair-gateway
+
+      - name: Install clair-pro deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (dashboard dist)
+        run: npm run build
+
+      - name: Unit tests — dashboard (vitest)
+        run: npm test
+
+      - name: E2E orchestration — full boot, health, SIGINT
+        run: npm run test:e2e

@@ -1,5 +1,8 @@
 # 🧊 CLAIR PRO — Unified Experience
 
+[![CI](https://github.com/stregz22ru-droid/clair-pro/actions/workflows/ci.yml/badge.svg)](https://github.com/stregz22ru-droid/clair-pro/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 Единый, готовый к использованию продукт поверх трёх независимых компонентов:
 
