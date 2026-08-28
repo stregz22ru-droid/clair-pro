@@ -1,0 +1,97 @@
+# ── CLAIR PRO — one command to run the whole product ─────────────────────────
+#
+#   docker compose up --build
+#
+# Demo without internet/API keys:
+#   LLM_PROVIDER_URL=http://llm-mock:4100 docker compose --profile demo up
+#
+# Configuration lives in .env next to this file:
+#   CLAIR_PILOT_DIR   host path to the IMMUTABLE CLAIR Base (default ./clair-base)
+#   CLAIR_BASE_CMD    command to start Base inside the container (default: npm start)
+#   LLM_PROVIDER_URL  upstream LLM API root (OpenAI-compatible)
+
+name: clair-pro
+
+services:
+  # 1 ── CLAIR Base (IMMUTABLE): host directory is mounted as-is ────────────────
+  clair-base:
+    image: node:20-alpine
+    working_dir: /clair-base
+    user: root
+    environment:
+      BASE_LOG_FILE: /clair-base/logs/clair_pilot.log.jsonl
+    volumes:
+      - ${CLAIR_PILOT_DIR:-./clair-base}:/clair-base
+      - ./mocks:/mocks:ro
+    command: ${CLAIR_BASE_CMD:-npm start}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # 1b ── Demo LLM (only with --profile demo): OpenAI-compatible mock ──────────
+  llm-mock:
+    profiles: ["demo"]
+    image: node:20-alpine
+    working_dir: /mocks
+    volumes:
+      - ../clair-gateway/mocks:/mocks:ro
+    command: node llm-mock.mjs
+    environment:
+      LLM_MOCK_PORT: "4100"
+    ports:
+      - "4100:4100"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4100/v1/models"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # 2 ── CLAIR Gateway: compression + cache proxy ───────────────────────────────
+  gateway:
+    build:
+      context: ../clair-gateway
+      dockerfile: docker/Dockerfile
+    environment:
+      PORT: "8080"
+      CLAIR_BASE_URL: http://clair-base:3000
+      LLM_PROVIDER_URL: ${LLM_PROVIDER_URL:-https://api.openai.com}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      COMPRESSION_MODE: medium
+      CLAIR_CACHE_TTL_MS: "300000"
+      CLAIR_CACHE_MAX_ENTRIES: "500"
+      SESSION_NAME: clair-pro
+      LOG_FILE: /app/logs/gateway.jsonl
+    volumes:
+      - gateway-logs:/app/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      clair-base:
+        condition: service_healthy
+
+  # 3 ── Visual Dashboard: UI + log analytics ───────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    environment:
+      DASHBOARD_PORT: "4000"
+      GATEWAY_URL: http://gateway:8080
+      GATEWAY_LOG_FILE: /logs/gateway.jsonl
+      BASE_LOG_FILE: /base-logs/clair_pilot.log.jsonl
+    volumes:
+      - gateway-logs:/logs:ro
+      - ${CLAIR_PILOT_DIR:-./clair-base}/logs:/base-logs:ro
+    ports:
+      - "4000:4000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  gateway-logs:

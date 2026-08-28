@@ -1,0 +1,33 @@
+{
+  "name": "clair-pro",
+  "version": "1.0.0",
+  "description": "CLAIR PRO: Unified Experience — orchestration layer + visual dashboard over CLAIR Base (immutable) and CLAIR Gateway.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx dashboard/src/server.ts",
+    "build": "tsc -p dashboard/tsconfig.json",
+    "prestart": "npm run build",
+    "start": "node dashboard/dist/server.js",
+    "test": "vitest run tests/dashboard.test.ts",
+    "test:e2e": "vitest run tests/orchestration.test.ts",
+    "mock:base": "node mocks/clair-base-mock.mjs",
+    "smoke": "bash scripts/smoke.sh",
+    "typecheck": "tsc -p dashboard/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

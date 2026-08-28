@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CLAIR PRO — Unified Experience</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🧊</text></svg>" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="vendor/chart.umd.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">🧊</span>
+      <div>
+        <h1>CLAIR <span class="accent">PRO</span></h1>
+        <p class="brand-sub">Unified Experience · Base + Gateway + Dashboard</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span id="live-indicator" class="live" title="Real-time соединение (SSE)">● live</span>
+      <label class="checkbox" title="Автообновление каждые 5 секунд">
+        <input type="checkbox" id="auto-refresh" checked /> авто
+      </label>
+      <button id="btn-refresh" class="btn" title="Обновить данные">↻ Обновить</button>
+      <button id="btn-csv" class="btn" title="Скачать CSV">CSV</button>
+      <button id="btn-json" class="btn" title="Скачать JSON">JSON</button>
+      <button id="btn-theme" class="btn icon" title="Тёмная/светлая тема">🌙</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- KPI cards -->
+    <section id="kpis" class="kpis" aria-label="Ключевые метрики">
+      <div class="kpi"><div class="kpi-label">Запросов</div><div class="kpi-value" id="kpi-requests">—</div><div class="kpi-hint" id="kpi-requests-hint"></div></div>
+      <div class="kpi"><div class="kpi-label">Токенов сэкономлено</div><div class="kpi-value accent" id="kpi-saved">—</div><div class="kpi-hint" id="kpi-saved-hint"></div></div>
+      <div class="kpi"><div class="kpi-label">Средний коэффициент</div><div class="kpi-value" id="kpi-ratio">—</div><div class="kpi-hint" id="kpi-ratio-hint">исходное / сжатое</div></div>
+      <div class="kpi"><div class="kpi-label">Кэш: попаданий</div><div class="kpi-value" id="kpi-cache">—</div><div class="kpi-hint" id="kpi-cache-hint"></div></div>
+      <div class="kpi"><div class="kpi-label">Средняя задержка</div><div class="kpi-value" id="kpi-latency">—</div><div class="kpi-hint" id="kpi-latency-hint">p95: —</div></div>
+    </section>
+
+    <!-- Charts -->
+    <section class="charts" aria-label="Графики">
+      <article class="card chart-card">
+        <h2>Экономия токенов</h2>
+        <div class="chart-box"><canvas id="chart-saved"></canvas></div>
+      </article>
+      <article class="card chart-card">
+        <h2>Эффективность сессий</h2>
+        <div class="chart-box"><canvas id="chart-sessions"></canvas></div>
+      </article>
+      <article class="card chart-card">
+        <h2>Кэш промптов</h2>
+        <div class="chart-box"><canvas id="chart-cache"></canvas></div>
+      </article>
+      <article class="card chart-card">
+        <h2>Задержка (latency)</h2>
+        <div class="chart-box"><canvas id="chart-latency"></canvas></div>
+      </article>
+    </section>
+
+    <!-- Test request -->
+    <section class="card test-panel" aria-label="Тестовый запрос">
+      <h2>Тестовый запрос через Gateway</h2>
+      <p class="muted">Запрос уйдёт на Gateway (:8080) → CLAIR Base → LLM. Метрики последней операции появятся под ответом.</p>
+      <div class="test-row">
+        <textarea id="test-text" rows="3" placeholder="Например: Составь маршрут на выходные в Петербурге, если я люблю архитектуру и кофе.">Составь маршрут на выходные в Петербурге, если я люблю архитектуру и кофе.</textarea>
+        <div class="test-controls">
+          <label>Сессия
+            <select id="test-session">
+              <option>ChatGPT</option>
+              <option>DeepSeek</option>
+              <option>Qwen</option>
+              <option selected>Demo</option>
+            </select>
+          </label>
+          <label>Модель
+            <select id="test-model">
+              <option value="gpt-4o-mini" selected>gpt-4o-mini</option>
+              <option value="gpt-4o">gpt-4o</option>
+            </select>
+          </label>
+          <button id="btn-send" class="btn primary">Отправить ▸</button>
+        </div>
+      </div>
+      <div id="test-result" class="test-result hidden">
+        <h3>Ответ LLM</h3>
+        <pre id="test-answer" class="answer"></pre>
+        <div id="test-metrics" class="test-metrics"></div>
+      </div>
+    </section>
+
+    <!-- Requests table -->
+    <section class="card" aria-label="Последние запросы">
+      <div class="table-head">
+        <h2>Последние запросы</h2>
+        <span id="table-count" class="muted"></span>
+      </div>
+      <div class="filters">
+        <select id="f-session" title="Сессия"><option value="">все сессии</option></select>
+        <select id="f-cache" title="Статус кэша">
+          <option value="">кэш: любой</option>
+          <option value="HIT">HIT</option>
+          <option value="PARTIAL">PARTIAL</option>
+          <option value="MISS">MISS</option>
+          <option value="BYPASS">BYPASS</option>
+        </select>
+        <select id="f-source" title="Источник лога">
+          <option value="">gateway + base</option>
+          <option value="gateway">gateway</option>
+          <option value="base">base</option>
+        </select>
+        <input id="f-q" type="search" placeholder="поиск: модель, сессия, note…" />
+        <select id="f-limit" title="Сколько строк показывать">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="250">250</option>
+          <option value="500">500</option>
+        </select>
+        <button id="btn-reset" class="btn" title="Сбросить фильтры">✕ сброс</button>
+      </div>
+      <div class="table-scroll">
+        <table id="requests-table">
+          <thead>
+            <tr>
+              <th>Время</th><th>Источник</th><th>Сессия</th><th>Модель/режим</th>
+              <th class="num">Токены</th><th class="num">Сэкономлено</th><th class="num">Коэф.</th>
+              <th>Кэш</th><th class="num">Задержка</th><th class="num">Статус</th><th>Note</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer muted">
+      <span id="file-meta"></span>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+</body>
+</html>
